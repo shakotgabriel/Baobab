@@ -1,26 +1,73 @@
-import { Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { CreateAuthDto } from './dto/create-auth.dto';
-import { UpdateAuthDto } from './dto/update-auth.dto';
-
+import * as bcrypt from 'bcrypt';
+import { PrismaService } from 'src/prisma/prisma.service';
+import { JwtService } from '@nestjs/jwt';
+import { LoginAuthDto } from './dto/login-auth.dto';
+import type { User } from '@prisma/client';
 @Injectable()
 export class AuthService {
-  create(createAuthDto: CreateAuthDto) {
-    return 'This action adds a new auth';
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly jwtService: JwtService,
+  ) {}
+
+  // REGISTER
+  async register(
+    createAuthDto: CreateAuthDto,
+  ): Promise<{ access_token: string }> {
+    const normalizedEmail = createAuthDto.email.trim().toLowerCase();
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+    if (existingUser) {
+      throw new ConflictException('Email already in use');
+    }
+    const hashedPassword = await bcrypt.hash(createAuthDto.password, 10);
+    const user: User = await this.prisma.user.create({
+      data: {
+        name: createAuthDto.name,
+        email: normalizedEmail,
+        password: hashedPassword,
+      },
+    });
+    return this.generateToken(user);
   }
 
-  findAll() {
-    return `This action returns all auth`;
+  private generateToken(user: User): { access_token: string } {
+    const payload = { sub: user.id, email: user.email };
+    const access_token = this.jwtService.sign(payload, { expiresIn: '1d' });
+    return { access_token };
   }
+  async login(loginAuthDto: LoginAuthDto): Promise<{ access_token: string }> {
+    if (!loginAuthDto.email || !loginAuthDto.password) {
+      throw new BadRequestException('Email and password are required');
+    }
+    const normalizedEmail = loginAuthDto.email.trim();
+    const user = await this.prisma.user.findFirst({
+      where: {
+        email: {
+          equals: normalizedEmail,
+          mode: 'insensitive',
+        },
+      },
+    });
 
-  findOne(id: number) {
-    return `This action returns a #${id} auth`;
-  }
+    if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
 
-  update(id: number, updateAuthDto: UpdateAuthDto) {
-    return `This action updates a #${id} auth`;
-  }
+    const isMatch = await bcrypt.compare(loginAuthDto.password, user.password);
 
-  remove(id: number) {
-    return `This action removes a #${id} auth`;
+    if (!isMatch) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    return this.generateToken(user);
   }
 }
