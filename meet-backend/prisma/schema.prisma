@@ -1,14 +1,127 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// User model: stores user profile and authentication info
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  avatar    String? 
+  bio       String? 
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime? // Soft delete field
+
+  // Relations
+  eventsCreated Event[] 
+  participations EventParticipant[]
+  notifications Notification[]
+
+  @@index([email])
+}
+
+/// Event model: stores event details
+model Event {
+  id              String        @id @default(uuid())
+  title           String
+  description     String
+  location        String
+  dateTime        DateTime
+  maxParticipants Int           @default(1) 
+  category        EventCategory
+  imageUrl        String?
+  status          EventStatus   @default(DRAFT)
+  creatorId       String
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  deletedAt       DateTime? // Soft delete field
+
+  // Relations
+  creator      User               @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  participants EventParticipant[]
+
+  @@index([dateTime])
+  @@index([location])
+}
+
+/// EventParticipant model
+model EventParticipant {
+  id        String            @id @default(uuid())
+  eventId   String
+  userId    String
+  status    ParticipantStatus @default(JOINED)
+  joinedAt  DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  // Relations
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([userId])
+  @@index([eventId])
+}
+
+/// Notification model
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  eventId   String? 
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+}
+
+/// Event status enum
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+  COMPLETED
+}
+
+/// Event category enum
+enum EventCategory {
+  SPORTS
+  MUSIC
+  FOOD
+  TECH
+  ART
+  EDUCATION
+  NETWORKING
+  GAMING
+  ENTERTAINMENT
+  OTHER
+}
+
+/// Participant status enum
+enum ParticipantStatus {
+  JOINED
+  LEFT
+  WAITLISTED
+}
+
+/// Notification type enum
+enum NotificationType {
+  EVENT_REMINDER
+  NEW_PARTICIPANT
+  EVENT_UPDATED
+  EVENT_CANCELLED
+  PARTICIPANT_LEFT
 }
